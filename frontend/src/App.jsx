@@ -19,6 +19,8 @@ function App() {
   useEffect(() => {
     if (currentConversationId) {
       loadConversation(currentConversationId);
+    } else {
+      setCurrentConversation(null);
     }
   }, [currentConversationId]);
 
@@ -42,14 +44,41 @@ function App() {
 
   const handleNewConversation = async () => {
     try {
+      // Guardrail: if you already have an empty "New conversation", just select it
+      const existingEmpty = conversations.find(
+        (c) =>
+          (c.message_count ?? 0) === 0 &&
+          ((c.title || '').toLowerCase() === 'new conversation' || !c.title)
+      );
+
+      if (existingEmpty) {
+        setCurrentConversationId(existingEmpty.id);
+        return;
+      }
+
       const newConv = await api.createConversation();
-      setConversations([
-        { id: newConv.id, created_at: newConv.created_at, message_count: 0 },
-        ...conversations,
-      ]);
+
+      // Prefer reloading list (keeps title/message_count consistent with backend)
+      await loadConversations();
       setCurrentConversationId(newConv.id);
     } catch (error) {
       console.error('Failed to create conversation:', error);
+    }
+  };
+
+  const handleDeleteConversation = async (id) => {
+    try {
+      await api.deleteConversation(id);
+
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+
+      if (currentConversationId === id) {
+        // Select next conversation if available, else clear selection
+        const remaining = conversations.filter((c) => c.id !== id);
+        setCurrentConversationId(remaining.length ? remaining[0].id : null);
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
     }
   };
 
@@ -66,7 +95,7 @@ function App() {
       const userMessage = { role: 'user', content };
       setCurrentConversation((prev) => ({
         ...prev,
-        messages: [...prev.messages, userMessage],
+        messages: [...(prev?.messages || []), userMessage],
       }));
 
       // Create a partial assistant message that will be updated progressively
@@ -86,77 +115,74 @@ function App() {
       // Add the partial assistant message
       setCurrentConversation((prev) => ({
         ...prev,
-        messages: [...prev.messages, assistantMessage],
+        messages: [...(prev?.messages || []), assistantMessage],
       }));
 
-      // Send message with streaming
       await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
         switch (eventType) {
           case 'stage1_start':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage1 = true;
+              if (lastMsg?.loading) lastMsg.loading.stage1 = true;
               return { ...prev, messages };
             });
             break;
 
           case 'stage1_complete':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage1 = event.data;
-              lastMsg.loading.stage1 = false;
+              if (lastMsg?.loading) lastMsg.loading.stage1 = false;
               return { ...prev, messages };
             });
             break;
 
           case 'stage2_start':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage2 = true;
+              if (lastMsg?.loading) lastMsg.loading.stage2 = true;
               return { ...prev, messages };
             });
             break;
 
           case 'stage2_complete':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage2 = event.data;
               lastMsg.metadata = event.metadata;
-              lastMsg.loading.stage2 = false;
+              if (lastMsg?.loading) lastMsg.loading.stage2 = false;
               return { ...prev, messages };
             });
             break;
 
           case 'stage3_start':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage3 = true;
+              if (lastMsg?.loading) lastMsg.loading.stage3 = true;
               return { ...prev, messages };
             });
             break;
 
           case 'stage3_complete':
             setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
+              const messages = [...(prev?.messages || [])];
               const lastMsg = messages[messages.length - 1];
               lastMsg.stage3 = event.data;
-              lastMsg.loading.stage3 = false;
+              if (lastMsg?.loading) lastMsg.loading.stage3 = false;
               return { ...prev, messages };
             });
             break;
 
           case 'title_complete':
-            // Reload conversations to get updated title
             loadConversations();
             break;
 
           case 'complete':
-            // Stream complete, reload conversations list
             loadConversations();
             setIsLoading(false);
             break;
@@ -167,7 +193,8 @@ function App() {
             break;
 
           default:
-            console.log('Unknown event type:', eventType);
+            // ignore
+            break;
         }
       });
     } catch (error) {
@@ -175,7 +202,7 @@ function App() {
       // Remove optimistic messages on error
       setCurrentConversation((prev) => ({
         ...prev,
-        messages: prev.messages.slice(0, -2),
+        messages: (prev?.messages || []).slice(0, -2),
       }));
       setIsLoading(false);
     }
@@ -188,6 +215,7 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
       />
       <ChatInterface
         conversation={currentConversation}

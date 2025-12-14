@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -6,6 +5,7 @@ export default function Sidebar({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  onDeleteConversation,
 }) {
   return (
     <div className="sidebar">
@@ -27,13 +27,37 @@ export default function Sidebar({
                 conv.id === currentConversationId ? 'active' : ''
               }`}
               onClick={() => onSelectConversation(conv.id)}
+              style={{ position: 'relative' }}
             >
               <div className="conversation-title">
-                {conv.title || 'New Conversation'}
+                {conv.title || 'New conversation'}
               </div>
               <div className="conversation-meta">
-                {conv.message_count} messages
+                {conv.message_count ?? 0} messages
               </div>
+
+              <button
+                type="button"
+                title="Delete conversation"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDeleteConversation(conv.id);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  top: 10,
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  lineHeight: '16px',
+                  opacity: 0.7,
+                }}
+              >
+                🗑️
+              </button>
             </div>
           ))
         )}

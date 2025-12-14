@@ -5,109 +5,120 @@
 const API_BASE = 'http://localhost:8001';
 
 export const api = {
-  /**
-   * List all conversations.
-   */
   async listConversations() {
     const response = await fetch(`${API_BASE}/api/conversations`);
-    if (!response.ok) {
-      throw new Error('Failed to list conversations');
-    }
+    if (!response.ok) throw new Error('Failed to list conversations');
     return response.json();
   },
 
-  /**
-   * Create a new conversation.
-   */
   async createConversation() {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    if (!response.ok) {
-      throw new Error('Failed to create conversation');
-    }
+    if (!response.ok) throw new Error('Failed to create conversation');
     return response.json();
   },
 
-  /**
-   * Get a specific conversation.
-   */
+  async deleteConversation(conversationId) {
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete conversation');
+    return response.json();
+  },
+
   async getConversation(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`
-    );
-    if (!response.ok) {
-      throw new Error('Failed to get conversation');
-    }
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}`);
+    if (!response.ok) throw new Error('Failed to get conversation');
     return response.json();
   },
 
-  /**
-   * Send a message in a conversation.
-   */
   async sendMessage(conversationId, content) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content }),
-      }
-    );
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (!response.ok) throw new Error('Failed to send message');
     return response.json();
   },
 
   /**
-   * Send a message and receive streaming updates.
-   * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
-   * @param {function} onEvent - Callback function for each event: (eventType, data) => void
-   * @returns {Promise<void>}
+   * Send a message and receive streaming stage events.
+   * Supports:
+   *  - JSON response (fallback)
+   *  - SSE stream (text/event-stream)
    */
   async sendMessageStream(conversationId, content, onEvent) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ content }),
-      }
-    );
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/message/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({ content }),
+    });
 
-    if (!response.ok) {
-      throw new Error('Failed to send message');
+    if (!response.ok) throw new Error('Failed to send message');
+
+    const contentType = response.headers.get('content-type') || '';
+
+    // JSON fallback
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+
+      onEvent('stage1_start', { type: 'stage1_start' });
+      onEvent('stage1_complete', { type: 'stage1_complete', data: data.stage1 });
+
+      onEvent('stage2_start', { type: 'stage2_start' });
+      onEvent('stage2_complete', {
+        type: 'stage2_complete',
+        data: data.stage2,
+        metadata: data.metadata || data.meta || null,
+      });
+
+      onEvent('stage3_start', { type: 'stage3_start' });
+      onEvent('stage3_complete', { type: 'stage3_complete', data: data.stage3 });
+
+      onEvent('title_complete', { type: 'title_complete' });
+      onEvent('complete', { type: 'complete' });
+      return;
     }
+
+    // SSE parsing
+    if (!response.body) throw new Error('Streaming not supported (no response body)');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines; keep remainder in buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          try {
-            const event = JSON.parse(data);
-            onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
-          }
+        const trimmed = line.trimEnd();
+
+        // Only handle "data:" lines (your backend uses this)
+        if (!trimmed.startsWith('data:')) continue;
+
+        const raw = trimmed.slice(5).trim();
+        if (!raw) continue;
+
+        try {
+          const event = JSON.parse(raw);
+          if (event && event.type) onEvent(event.type, event);
+        } catch (e) {
+          console.error('Failed to parse SSE data line:', raw, e);
         }
       }
     }
