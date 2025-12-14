@@ -2,16 +2,22 @@
 
 ![llmcouncil](header.jpg)
 
-
 ## Fork notes (elhamid)
 
 This is a fork of `karpathy/llm-council`.
 
-### Value added
-- Real SSE endpoint (`text/event-stream`) for `/api/conversations/{id}/message/stream` with incremental `stage*_start/complete` events.
-- Persist `meta/metadata` (label_to_model, aggregate_rankings, model_roles) so Stage2 can render correctly in the frontend.
-- Fix frontend Stage2 wiring to read `msg.meta || msg.metadata`.
+### Value added (decision-quality focused)
+- **Decision-auditable runs:** every council response is saved with a compact decision trace (Stage 1 answers, Stage 2 rankings, and the Stage 2→model mapping), so you can inspect *why* the Chairman concluded what it did — not just the final text.
+- **Reduced “model-brand” bias in judging:** Stage 2 rankings operate on anonymized responses (Response A/B/C/…), and the label→model mapping is preserved for post-hoc review. This keeps peer review focused on content quality rather than model identity.
+- **Role-separated council behavior:** explicit role specs (Analyst / Researcher / Critic / Provocateur + Chairman) make the council behave more like a real review board: one pushes rigor, one hunts missing facts, one stress-tests, one challenges assumptions — then the Chairman synthesizes.
+- **Repeatable scoring across runs:** aggregated ranks (average rank + count) are persisted so you can compare council behavior over time and across prompts, instead of treating each run as a one-off chat.
 
+### Implementation notes (supporting the above)
+- Real SSE endpoint (`text/event-stream`) for `/api/conversations/{id}/message/stream` with incremental `stage*_start/complete` events.
+- Persist `meta/metadata` (`label_to_model`, `aggregate_rankings`, `model_roles`) so Stage2 renders correctly and the run is reviewable later.
+- Frontend Stage2 reads `msg.meta || msg.metadata` so fork/upstream payload shapes both render.
+
+----
 
 The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
 
