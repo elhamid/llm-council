@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv
+
+      - name: Sync deps (locked)
+        run: |
+          uv sync --frozen
+
+      - name: Import sanity
+        run: |
+          uv run python -c "import backend.main; import backend.council; import backend.storage; print('imports_ok')"
+
+  smoke_quality:
+    runs-on: ubuntu-latest
+    needs: sanity
+    if: ${{ secrets.OPENROUTER_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv
+
+      - name: Sync deps (locked)
+        run: |
+          uv sync --frozen
+
+      - name: Start backend
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PERSIST_STORAGE: "0"
+          CORS_ALLOW_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+        run: |
+          uv run uvicorn backend.main:app --host 127.0.0.1 --port 8001 --log-level info &
+          echo $! > /tmp/uvicorn.pid
+          sleep 2
+          curl -sS http://127.0.0.1:8001/health
+
+      - name: Run smoke + quality
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          bash stage2_smoke.sh
+          bash stage2_quality.sh
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/uvicorn.pid ]; then kill "$(cat /tmp/uvicorn.pid)" || true; fi
