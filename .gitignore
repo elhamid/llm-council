@@ -75,3 +75,5 @@ tools/
 llm_council_dump_*.tar.gz
 llm_council_bundle*.tar.gz
 llm_council_system_bundle*.tar.gz
+
+.DS_Store
