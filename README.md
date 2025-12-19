@@ -10,11 +10,12 @@ This is a fork of `karpathy/llm-council`.
 
 New in this fork since the previously published state:
 
-- **Conversation history is complete again:** storage now loads legacy `backend/data/conversations.json` and also supports the legacy `data/` layout (including per-conversation JSON files if present), so older runs show up in the UI.
-- **Conversation list no longer truncates early:** frontend requests `/api/conversations?limit=500` to reliably show the full sidebar history.
-- **Stage 2 judge-model duplication fixed:** Stage 2 now dedupes judge models (and labels adjudicator if needed) so quality runs do not silently double-count the same model.
-- **Titles persist correctly:** after Stage 3 completes, a title is derived and saved to the conversation record so it sticks across refreshes and shows in history.
-- **Tooling + reproducibility:** added stage2 smoke/quality scripts and evaluation artifacts to make regression checks repeatable.
+- **Conversation history is complete again:** storage loads older runs from `backend/data/conversations.json` and supports the legacy `data/` layout (including `data/conversations/` per-conversation JSON files when present), so older runs show up in the UI.
+- **Sidebar no longer truncates early:** the frontend now requests `/api/conversations?limit=500` so the conversation list reliably shows full history.
+- **Stage 2 judge duplication fixed:** Stage 2 now dedupes judge models so evaluation does not silently double-count the same judge.
+- **Titles persist correctly:** after Stage 3 completes, a title is derived and saved to the conversation record, so it sticks across refreshes and appears in history.
+- **Tooling + reproducibility:** added Stage 2 smoke/quality scripts and supporting evaluation artifacts to make regressions repeatable.
+- **Roles updated + clarified:** earlier fork notes described roles as **Analyst / Researcher / Critic / Provocateur**; the implemented role set is now **Builder / Reviewer / Synthesizer / Contrarian** (with a provider-default mapping in `backend/roles.py`). This keeps the “multi-perspective” intent, but with clearer, more actionable role behavior.
 
 ### Value added — 2025-12-14 (decision-quality focused)
 - **Decision-auditable runs:** every council response is saved with a compact decision trace (Stage 1 answers, Stage 2 rankings, and the Stage 2→model mapping), so you can inspect *why* the Chairman concluded what it did — not just the final text.
