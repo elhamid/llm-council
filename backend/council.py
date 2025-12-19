@@ -366,19 +366,29 @@ def _deep_extract_text(obj: Any) -> str:
 
 async def _chat(model: str, messages: List[Dict[str, str]], temperature: float = 0.2) -> str:
     client = _client()
+    # Prevent truncation: increase output token budget.
+    # Safe env override (won't crash on invalid values).
+    max_gen_tokens = 2048
+    _env = (os.getenv("COUNCIL_MAX_TOKENS") or "").strip()
+    if _env:
+        try:
+            max_gen_tokens = int(_env)
+        except ValueError:
+            max_gen_tokens = 2048
+
     try:
         resp = await client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
-            max_tokens=768,
+            max_tokens=max_gen_tokens,
         )
     except TypeError:
         resp = await client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
-            max_output_tokens=768,
+            max_output_tokens=max_gen_tokens,
         )
 
     msg = resp.choices[0].message
