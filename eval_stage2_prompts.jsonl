@@ -1,0 +1,6 @@
+{"id":"p1","prompt":"You are given a broken bash snippet that should compute a pass rate.\n\nBuggy snippet:\nPASS=0; TOTAL=10\nscore = (PASS*100/TOTAL)\n\nFix it. Output a corrected snippet and a 1-sentence explanation."}
+{"id":"p2","prompt":"FastAPI returns 200 on /health, but /api/conversations/{CID}/messages sometimes returns stage2 placeholders. Give the most likely root causes and the smallest fix (max 5 bullets)."}
+{"id":"p3","prompt":"I ran a script and got: NameError: name 'default' is not defined inside an embedded Python heredoc in a bash script. Give the smallest fix and show the exact corrected lines."}
+{"id":"p4","prompt":"Write the exact curl commands to: (1) create a conversation, (2) post a message, (3) save full JSON response to /tmp/out.json, (4) pretty-print it. Keep it minimal and runnable."}
+{"id":"p5","prompt":"Given 4 anonymous answers A-D to a technical troubleshooting question, what are 3 tie-break rules you would use when answers are similar? Answer in 3 bullets, no fluff."}
+{"id":"p6","prompt":"I want to enforce that each Stage 2 critique line cites one concrete detail from that response. Propose a strict but practical rule that a parser can verify. Provide 2 examples of compliant critique lines."}

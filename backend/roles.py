@@ -1,96 +1,105 @@
-"""Role prompts for the LLM Council.
-
-Keep this file small and explicit. We only store:
-- a role name
-- a system prompt that nudges behavior
-
-Council orchestration can then inject these prompts per-model.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True)
 class RoleSpec:
-    role: str
-    system_prompt: str
+    name: str
+    system: str
 
 
-# Default role if a model is not explicitly mapped.
+    @property
+    def system_prompt(self) -> str:
+        # Back-compat: older council code expects `role_spec.system_prompt`.
+        return self.system
+
 DEFAULT_ROLE = RoleSpec(
-    role="Generalist",
-    system_prompt=(
-        "You are a helpful generalist in an LLM council. "
-        "Be direct, accurate, and avoid inventing facts. "
-        "If something is unknown, say so and propose the next best step."
+    name="Generalist",
+    system=(
+        "You are a strong, truth-first assistant.\n"
+        "Be concise, precise, and practical.\n"
+        "If information is missing, say what is missing and ask for it.\n"
+        "Do not invent facts.\n"
     ),
 )
 
-
-# Per-model role assignment.
-# NOTE: Keep model IDs in sync with `backend/config.py`.
-MODEL_ROLES: Dict[str, RoleSpec] = {
-    "openai/gpt-5.2": RoleSpec(
-        role="Analyst",
-        system_prompt=(
-            "You are the Analyst in an LLM council. "
-            "Prioritize clear structure, correct reasoning, and explicit assumptions. "
-            "Prefer short numbered steps. Avoid fluff and marketing language."
+ROLE_SPECS: Dict[str, RoleSpec] = {
+    "builder": RoleSpec(
+        name="Builder",
+        system=(
+            "You are a pragmatic senior engineer.\n"
+            "Prefer minimal, runnable fixes.\n"
+            "When uncertain, state assumptions explicitly.\n"
+            "Do not invent facts.\n"
         ),
     ),
-    "google/gemini-3-pro-preview": RoleSpec(
-        role="Researcher",
-        system_prompt=(
-            "You are the Researcher in an LLM council. "
-            "Prioritize factual coverage, edge-case facts, and crisp definitions. "
-            "If a claim is uncertain, label it as uncertain rather than guessing."
+    "reviewer": RoleSpec(
+        name="Reviewer",
+        system=(
+            "You are a careful reviewer.\n"
+            "Look for edge cases, missing steps, and correctness issues.\n"
+            "Do not invent facts.\n"
         ),
     ),
-    "anthropic/claude-sonnet-4.5": RoleSpec(
-        role="Critic",
-        system_prompt=(
-            "You are the Critic in an LLM council. "
-            "Pressure-test the prompt and other answers: find ambiguity, missing constraints, and likely failure modes. "
-            "Offer concrete improvements. Stay grounded and avoid speculation."
+    "synthesizer": RoleSpec(
+        name="Synthesizer",
+        system=(
+            "You are an analytical synthesizer.\n"
+            "Combine the best parts of different answers into one.\n"
+            "Do not invent facts.\n"
         ),
     ),
-    "x-ai/grok-4.1-fast": RoleSpec(
-        role="Provocateur",
-        system_prompt=(
-            "You are the Provocateur in an LLM council. "
-            "Challenge groupthink and propose alternative viewpoints or creative approaches. "
-            "Mark any speculation clearly; do not fabricate facts."
-        ),
-    ),
-    "anthropic/claude-opus-4.5": RoleSpec(
-        role="Chairman",
-        system_prompt=(
-            "You are the Chairman of an LLM council. "
-            "Synthesize the best parts of the council into one final answer. "
-            "Prefer balance over dominance, and correct factual errors. "
-            "Be concise, practical, and avoid meta commentary."
+    "contrarian": RoleSpec(
+        name="Contrarian",
+        system=(
+            "You are a sharp contrarian reviewer.\n"
+            "Stress-test assumptions and look for hidden failure modes.\n"
+            "Do not invent facts.\n"
         ),
     ),
 }
 
-
-def get_role_spec(model_id: str) -> RoleSpec:
-    """Return the RoleSpec for a model, falling back to DEFAULT_ROLE."""
-    return MODEL_ROLES.get(model_id, DEFAULT_ROLE)
-
-
-def build_messages_for_model(model_id: str, user_content: str) -> list[dict]:
-    """Build OpenAI-style chat messages with a role-specific system prompt."""
-    role_spec = get_role_spec(model_id)
-    return [
-        {"role": "system", "content": role_spec.system_prompt},
-        {"role": "user", "content": user_content},
-    ]
+PROVIDER_DEFAULT_ROLE: Dict[str, str] = {
+    "openai/": "builder",
+    "anthropic/": "reviewer",
+    "google/": "synthesizer",
+    "x-ai/": "contrarian",
+}
 
 
-def chairman_system_prompt(model_id: str) -> str:
-    """System prompt to use for the chairman model."""
-    return get_role_spec(model_id).system_prompt
+def get_role_spec(model: str) -> RoleSpec:
+    m = (model or "").strip()
+    for prefix, role_key in PROVIDER_DEFAULT_ROLE.items():
+        if m.startswith(prefix):
+            return ROLE_SPECS.get(role_key, DEFAULT_ROLE)
+    return DEFAULT_ROLE
+
+
+def build_messages_for_model(
+    model: str,
+    user_prompt: str,
+    contract_system_messages: Optional[List[dict]] = None,
+    extra_system: Optional[str] = None,
+) -> List[dict]:
+    msgs: List[dict] = []
+    if contract_system_messages:
+        msgs.extend(contract_system_messages)
+    role = get_role_spec(model)
+    sys = role.system
+    if extra_system:
+        sys = sys.rstrip() + "\n\n" + extra_system.strip() + "\n"
+    msgs.append({"role": "system", "content": sys})
+    msgs.append({"role": "user", "content": user_prompt})
+    return msgs
+
+
+def chairman_system_prompt() -> str:
+    return (
+        "CHAIRMAN MODE.\n"
+        "Synthesize the best final answer for the user.\n"
+        "Truth-first: do not invent facts.\n"
+        "Prefer actionable, verifiable steps.\n"
+        "If information is missing, say what is missing.\n"
+    )

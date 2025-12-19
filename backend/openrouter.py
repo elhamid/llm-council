@@ -1,79 +1,56 @@
-"""OpenRouter API client for making LLM requests."""
+"""OpenRouter API client for making LLM requests.
 
-import httpx
+Intentionally small and dependency-light to keep the public beta stable.
+"""
+
+from __future__ import annotations
+
 from typing import List, Dict, Any, Optional
-from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+import httpx
+
+from .config import get_config
 
 
-async def query_model(
-    model: str,
-    messages: List[Dict[str, str]],
-    timeout: float = 120.0
-) -> Optional[Dict[str, Any]]:
-    """
-    Query a single model via OpenRouter API.
-
-    Args:
-        model: OpenRouter model identifier (e.g., "openai/gpt-4o")
-        messages: List of message dicts with 'role' and 'content'
-        timeout: Request timeout in seconds
+async def query_model(model: str, messages: List[Dict[str, str]], timeout: Optional[float] = None) -> Dict[str, Any]:
+    """Query a single model via OpenRouter.
 
     Returns:
-        Response dict with 'content' and optional 'reasoning_details', or None if failed
+      { "model": <model>, "response": <text>, "raw": <payload_optional>, "error": <str_optional> }
     """
+    cfg = get_config()
+    api_key = cfg.openrouter_api_key
+    api_url = cfg.openrouter_api_url
+    t = float(timeout if timeout is not None else cfg.openrouter_timeout_s)
+
+    if not api_key:
+        return {"model": model, "response": "", "error": "OPENROUTER_API_KEY missing"}
+
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-
-    payload = {
-        "model": model,
-        "messages": messages,
-    }
+    payload = {"model": model, "messages": messages}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            message = data['choices'][0]['message']
-
-            return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
-            }
-
+        async with httpx.AsyncClient(timeout=t) as client:
+            r = await client.post(api_url, headers=headers, json=payload)
+            if r.status_code >= 400:
+                return {"model": model, "response": "", "error": f"HTTP {r.status_code}: {r.text[:400]}"}
+            data = r.json()
+            text = ""
+            try:
+                text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            except Exception:
+                text = ""
+            return {"model": model, "response": text, "raw": data}
     except Exception as e:
-        print(f"Error querying model {model}: {e}")
-        return None
+        return {"model": model, "response": "", "error": f"{type(e).__name__}: {e}"}
 
 
-async def query_models_parallel(
-    models: List[str],
-    messages: List[Dict[str, str]]
-) -> Dict[str, Optional[Dict[str, Any]]]:
-    """
-    Query multiple models in parallel.
-
-    Args:
-        models: List of OpenRouter model identifiers
-        messages: List of message dicts to send to each model
-
-    Returns:
-        Dict mapping model identifier to response dict (or None if failed)
-    """
+async def query_models(models: List[str], messages: List[Dict[str, str]], timeout: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
+    """Query multiple models concurrently."""
     import asyncio
 
-    # Create tasks for all models
-    tasks = [query_model(model, messages) for model in models]
-
-    # Wait for all to complete
-    responses = await asyncio.gather(*tasks)
-
-    # Map models to their responses
-    return {model: response for model, response in zip(models, responses)}
+    tasks = [query_model(m, messages, timeout=timeout) for m in models]
+    results = await asyncio.gather(*tasks)
+    return {r.get("model", ""): r for r in results}

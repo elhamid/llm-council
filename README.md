@@ -6,7 +6,17 @@
 
 This is a fork of `karpathy/llm-council`.
 
-### Value added (decision-quality focused)
+### Update — 2025-12-19 (Stability + auditability pass)
+
+New in this fork since the previously published state:
+
+- **Conversation history is complete again:** storage now loads legacy `backend/data/conversations.json` and also supports the legacy `data/` layout (including per-conversation JSON files if present), so older runs show up in the UI.
+- **Conversation list no longer truncates early:** frontend requests `/api/conversations?limit=500` to reliably show the full sidebar history.
+- **Stage 2 judge-model duplication fixed:** Stage 2 now dedupes judge models (and labels adjudicator if needed) so quality runs do not silently double-count the same model.
+- **Titles persist correctly:** after Stage 3 completes, a title is derived and saved to the conversation record so it sticks across refreshes and shows in history.
+- **Tooling + reproducibility:** added stage2 smoke/quality scripts and evaluation artifacts to make regression checks repeatable.
+
+### Value added — 2025-12-14 (decision-quality focused)
 - **Decision-auditable runs:** every council response is saved with a compact decision trace (Stage 1 answers, Stage 2 rankings, and the Stage 2→model mapping), so you can inspect *why* the Chairman concluded what it did — not just the final text.
 - **Reduced “model-brand” bias in judging:** Stage 2 rankings operate on anonymized responses (Response A/B/C/…), and the label→model mapping is preserved for post-hoc review. This keeps peer review focused on content quality rather than model identity.
 - **Role-separated council behavior:** explicit role specs (Analyst / Researcher / Critic / Provocateur + Chairman) make the council behave more like a real review board: one pushes rigor, one hunts missing facts, one stress-tests, one challenges assumptions — then the Chairman synthesizes.

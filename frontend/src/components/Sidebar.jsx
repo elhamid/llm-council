@@ -32,10 +32,6 @@ export default function Sidebar({
               <div className="conversation-title">
                 {conv.title || 'New conversation'}
               </div>
-              <div className="conversation-meta">
-                {conv.message_count ?? 0} messages
-              </div>
-
               <button
                 type="button"
                 title="Delete conversation"

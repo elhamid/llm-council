@@ -19,3 +19,61 @@ data/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+# --- LLM Council fork hygiene ---
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node / build
+frontend/node_modules/
+frontend/dist/
+
+# Local data (do not commit personal conversations)
+backend/data/*.json
+!backend/data/conversations.example.json
+!backend/data/*.example.json
+data/conversations/
+data/conversations/*.json
+
+# Local outputs
+resp*.json
+convo*.json
+frontend/convo*.json
+frontend/convos.json
+frontend/conversation_*.json
+
+# Backups / logs
+*.bak
+*.bak_*
+*.log
+*.txt
+
+# macOS junk
+.DS_Store
+._*
+
+# Local dev
+.vscode/
+
+# Backups / generated bundles
+start.sh.bak*
+tools/*.tar.gz
+tools/*.tgz
+llm_council_dump_*.tar.gz
+backend/data/conversations.json
+
+# Local dev artifacts
+backend/*.bak*
+convo.json
+resp.json
+
+# Dumps / bundles (never commit)
+tools/
+*.tar.gz
+*.tgz
+llm_council_dump_*.tar.gz
+llm_council_bundle*.tar.gz
+llm_council_system_bundle*.tar.gz
+
+.DS_Store

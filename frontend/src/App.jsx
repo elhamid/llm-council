@@ -27,6 +27,7 @@ function App() {
   const loadConversations = async () => {
     try {
       const convs = await api.listConversations();
+      convs.sort((a,b) => ((b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '')));
       setConversations(convs);
     } catch (error) {
       console.error('Failed to load conversations:', error);
@@ -43,28 +44,36 @@ function App() {
   };
 
   const handleNewConversation = async () => {
-    try {
-      // Guardrail: if you already have an empty "New conversation", just select it
-      const existingEmpty = conversations.find(
-        (c) =>
-          (c.message_count ?? 0) === 0 &&
-          ((c.title || '').toLowerCase() === 'new conversation' || !c.title)
-      );
+      try {
+        // Guardrail: do not create multiple empty "New conversation" threads
+        const existingEmpty = conversations
+          .filter((c) => {
+            const n = (c.messages?.length ?? c.message_count ?? 0);
+            const t = (c.title || '').toLowerCase();
+            return n === 0 && (t === 'new conversation' || t === 'new' || t === '');
+          })
+          .sort((a, b) => ((b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '')))[0];
 
-      if (existingEmpty) {
-        setCurrentConversationId(existingEmpty.id);
-        return;
+        if (existingEmpty) {
+          setCurrentConversationId(existingEmpty.id);
+          return;
+        }
+
+        const newConv = await api.createConversation();
+
+        // Immediately reflect in UI (prevents the "void" / missing-from-list issue)
+        setConversations((prev) => {
+          const next = [newConv, ...prev.filter((c) => c.id !== newConv.id)];
+          next.sort((a, b) => ((b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '')));
+          return next;
+        });
+
+        setCurrentConversationId(newConv.id);
+        setCurrentConversation(newConv);
+      } catch (error) {
+        console.error("Failed to create conversation:", error);
       }
-
-      const newConv = await api.createConversation();
-
-      // Prefer reloading list (keeps title/message_count consistent with backend)
-      await loadConversations();
-      setCurrentConversationId(newConv.id);
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-    }
-  };
+    };
 
   const handleDeleteConversation = async (id) => {
     try {

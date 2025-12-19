@@ -6,7 +6,7 @@ const API_BASE = 'http://localhost:8001';
 
 export const api = {
   async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
+    const response = await fetch(`${API_BASE}/api/conversations?limit=500`);
     if (!response.ok) throw new Error('Failed to list conversations');
     return response.json();
   },
@@ -52,7 +52,8 @@ export const api = {
    *  - SSE stream (text/event-stream)
    */
   async sendMessageStream(conversationId, content, onEvent) {
-    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/message/stream`, {
+    if (!conversationId) throw new Error('Missing conversationId');
+    const response = await fetch(`${API_BASE}/api/conversations/${conversationId}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,18 +70,29 @@ export const api = {
     if (contentType.includes('application/json')) {
       const data = await response.json();
 
+      const _yield = () => new Promise((r) => setTimeout(r, 50));
       onEvent('stage1_start', { type: 'stage1_start' });
       onEvent('stage1_complete', { type: 'stage1_complete', data: data.stage1 });
 
+      await _yield();
+
       onEvent('stage2_start', { type: 'stage2_start' });
+      await _yield();
+
       onEvent('stage2_complete', {
         type: 'stage2_complete',
         data: data.stage2,
         metadata: data.metadata || data.meta || null,
       });
 
+      await _yield();
+
       onEvent('stage3_start', { type: 'stage3_start' });
+      await _yield();
+
       onEvent('stage3_complete', { type: 'stage3_complete', data: data.stage3 });
+
+      await _yield();
 
       onEvent('title_complete', { type: 'title_complete' });
       onEvent('complete', { type: 'complete' });
