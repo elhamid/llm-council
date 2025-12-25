@@ -74,23 +74,48 @@ def get_contract(contract_id: str) -> ContractSpec:
     return CONTRACTS[contract_id]
 
 
-def parse_contract_ids(contract_stack: Optional[str]) -> List[str]:
+def parse_contract_ids(contract_stack: Optional[Any]) -> List[str]:
     """
-    Parse a comma-separated contract stack.
-    Always ensures the factory base contract is present (first).
+    Parse a contract stack.
+
+    Public mode default: if contract_stack is missing/empty, apply NO contracts.
+    Factory mode: if any contract(s) are provided, ensure FACTORY_TRUTH_V1 is included first.
     """
+    if not contract_stack:
+        return []
+
     ids: List[str] = []
-    if contract_stack:
-        ids = [c.strip() for c in contract_stack.split(",") if c.strip()]
 
-    # Ensure factory base is always included first
-    if FACTORY_TRUTH_V1.contract_id not in ids:
-        ids.insert(0, FACTORY_TRUTH_V1.contract_id)
+    # Accept either:
+    # - "a,b,c" (string)
+    # - ["a","b"] (list of strings)
+    # - [{"contract_id":"a"}, ...] (list of dicts)
+    if isinstance(contract_stack, str):
+        ids = [c.strip() for c in contract_stack.split(",") if c and c.strip()]
+    elif isinstance(contract_stack, list):
+        for item in contract_stack:
+            if isinstance(item, str) and item.strip():
+                ids.append(item.strip())
+            elif isinstance(item, dict):
+                cid = item.get("contract_id") or item.get("id")
+                if isinstance(cid, str) and cid.strip():
+                    ids.append(cid.strip())
+
+    # Dedupe preserve order
+    out: List[str] = []
+    seen = set()
+    for cid in ids:
+        if cid and cid not in seen:
+            seen.add(cid)
+            out.append(cid)
+
+    # If any contracts were requested, inject factory base first (keeps private factory behavior).
+    if FACTORY_TRUTH_V1.contract_id not in out:
+        out.insert(0, FACTORY_TRUTH_V1.contract_id)
     else:
-        # move it to the front
-        ids = [FACTORY_TRUTH_V1.contract_id] + [c for c in ids if c != FACTORY_TRUTH_V1.contract_id]
+        out = [FACTORY_TRUTH_V1.contract_id] + [c for c in out if c != FACTORY_TRUTH_V1.contract_id]
 
-    return ids
+    return out
 
 
 def build_contract_system_messages(contract_stack: Optional[str]) -> List[dict]:

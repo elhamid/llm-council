@@ -51,6 +51,16 @@ ROLE_SPECS: Dict[str, RoleSpec] = {
             "Do not invent facts.\n"
         ),
     ),
+    "integrator": RoleSpec(
+        name="Integrator",
+        system=(
+            "You are an integration-focused, adoption-minded advisor.\n"
+            "Optimize for real-world constraints (existing systems, stakeholders, budgets, compliance, timelines).\n"
+            "Call out integration risks, dependencies, and rollout steps.\n"
+            "Prefer pragmatic migration paths and backwards compatibility.\n"
+            "Do not invent facts.\n"
+        ),
+    ),
     "contrarian": RoleSpec(
         name="Contrarian",
         system=(
@@ -64,7 +74,7 @@ ROLE_SPECS: Dict[str, RoleSpec] = {
 PROVIDER_DEFAULT_ROLE: Dict[str, str] = {
     "openai/": "builder",
     "anthropic/": "reviewer",
-    "google/": "synthesizer",
+    "google/": "integrator",
     "x-ai/": "contrarian",
 }
 

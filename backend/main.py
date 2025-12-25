@@ -2,9 +2,11 @@ import asyncio
 import inspect
 import logging
 import os
+import json
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -274,10 +276,114 @@ async def api_send_message(conversation_id: str, payload: SendMessagePayload, re
     contract_stack = payload.contract_stack or []
 
     # OpenRouter API key is required for any model call
-    if not (cfg.openrouter_api_key or "").strip() and not (os.getenv("OPENROUTER_API_KEY") or "").strip():
-        raise HTTPException(status_code=500, detail="Missing OPENROUTER_API_KEY")
+    accept = (request.headers.get("accept") or "").lower()
+    wants_stream = "text/event-stream" in accept
+    has_key = bool((cfg.openrouter_api_key or "").strip() or (os.getenv("OPENROUTER_API_KEY") or "").strip())
 
     errors: list[str] = []
+
+    # SSE stream path (only when client explicitly requests it)
+    if wants_stream:
+
+        async def _event_stream():
+            def _sse(obj) -> str:
+                return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+            if not has_key:
+                yield _sse({"type": "error", "message": "Missing OPENROUTER_API_KEY"})
+                yield _sse({"type": "complete"})
+                return
+
+            try:
+                yield _sse({"type": "stage1_start"})
+                stage1_fn = _pick("stage1_collect_responses","stage1_collect","collect_stage1_responses","stage1")
+                if not stage1_fn:
+                    raise RuntimeError("Stage1 function not found in backend.council")
+                stage1_results = await _maybe_await(_invoke(stage1_fn, args=(payload.content,), kwargs={"system": role_spec.system, "contract_stack": contract_stack, "contracts": contract_stack}))
+                yield _sse({"type": "stage1_complete", "data": stage1_results})
+
+                yield _sse({"type": "stage2_start"})
+                stage2_fn = _pick("stage2_collect_rankings","stage2_collect","collect_stage2_rankings","stage2")
+                if not stage2_fn:
+                    raise RuntimeError("Stage2 function not found in backend.council")
+                stage2_results = await _maybe_await(_invoke(stage2_fn, args=(payload.content, stage1_results), kwargs={"contract_stack": contract_stack, "contracts": contract_stack}))
+                if isinstance(stage2_results, tuple) and len(stage2_results) == 2:
+                    stage2_results, _ = stage2_results
+                agg_fn = _pick("aggregate_stage2_rankings", "aggregate_rankings")
+                aggregate_rankings = _invoke(agg_fn, args=(stage2_results,), kwargs={}) if agg_fn else None
+
+                # Build meta (same keys as JSON path)
+                label_to_model = {}
+                for idx, r in enumerate(stage1_results or []):
+                    label = f"Response {chr(65 + idx)}"
+                    mid = (r or {}).get("model")
+                    if mid:
+                        label_to_model[label] = mid
+                model_roles = {}
+                try:
+                    for r in stage1_results or []:
+                        mid = (r or {}).get("model")
+                        if mid:
+                            model_roles[mid] = get_role_spec(mid).role
+                    model_roles[CHAIRMAN_MODEL] = get_role_spec(CHAIRMAN_MODEL).role
+                except Exception:
+                    pass
+                meta = {
+                    "contract_stack": contract_stack,
+                    "aggregate_rankings": aggregate_rankings,
+                    "label_to_model": label_to_model,
+                    "model_roles": model_roles,
+                    "contract_gate": (_invoke(_pick("build_contract_gate_summary", "contract_gate_summary"), args=(stage1_results, label_to_model), kwargs={}) if _pick("build_contract_gate_summary", "contract_gate_summary") else None),
+                    "stage1_last_errors": dict(STAGE1_LAST_ERRORS or {}),
+                    "stage2_last_errors": dict(STAGE2_LAST_ERRORS or {}),
+                }
+                yield _sse({"type": "stage2_complete", "data": stage2_results, "metadata": meta})
+
+                yield _sse({"type": "stage3_start"})
+                stage3_fn = _pick("stage3_select_winner","stage3_choose_winner","stage3_select_final","stage3_synthesize","stage3_run","stage3")
+                if not stage3_fn:
+                    raise RuntimeError("Stage3 function not found in backend.council")
+                stage3_result = await _maybe_await(_invoke(stage3_fn, args=(payload.content, stage1_results, stage2_results), kwargs={"contract_stack": contract_stack, "contracts": contract_stack}))
+                yield _sse({"type": "stage3_complete", "data": stage3_result})
+
+                # Persist assistant message + stages so sidebar/title updates work in SSE mode
+                add_assistant_message(
+                    conversation_id,
+                    (stage3_result or {}).get("response") or "",
+                    stage1=stage1_results,
+                    stage2=stage2_results,
+                    stage3=stage3_result,
+                    meta=meta,
+                )
+
+                # Title best-effort (do this before emitting title_complete)
+                try:
+                    s3_text = (stage3_result or {}).get("response") or ""
+                    title = _extract_title_from_stage3_response(s3_text)
+                    if not title:
+                        up = (payload.content or "").strip().splitlines()[0:1]
+                        title = (up[0] if up else "")[:120] or None
+                    if title:
+                        convo2 = get_conversation(conversation_id)
+                        if isinstance(convo2, dict) and (convo2.get("title") in (None, "", "New conversation")):
+                            convo2["title"] = title
+                            save_conversation(convo2)
+                except Exception:
+                    pass
+
+            except Exception as e:
+                yield _sse({"type": "error", "message": str(e)})
+                yield _sse({"type": "complete"})
+                return
+
+            yield _sse({"type": "title_complete"})
+            yield _sse({"type": "complete"})
+
+        return StreamingResponse(_event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache","X-Accel-Buffering": "no","Connection": "keep-alive"})
+
+    # JSON path: no hard 500 — return stable schema with error visible in meta
+    if not has_key:
+        errors.append("Missing OPENROUTER_API_KEY")
 
     try:
         # Stage 1
