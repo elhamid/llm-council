@@ -62,4 +62,8 @@
 .response-text {
   color: #333;
   line-height: 1.6;
+
+  max-height: clamp(260px, 45vh, 640px);
+  overflow: auto;
+  padding-right: 8px;
 }

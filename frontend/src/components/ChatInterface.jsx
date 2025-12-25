@@ -72,6 +72,18 @@ export default function ChatInterface({ conversation, onSendMessage, isLoading }
                 ) : (
                   <div className="assistant-message">
                     <div className="message-label">LLM Council</div>
+                    <div className="stage-status-row">
+                      <span className={`stage-pill ${msg.loading?.stage1 ? 'running' : msg.stage1 ? 'done' : 'pending'}`}>Stage 1</span>
+                      <span className={`stage-pill ${msg.loading?.stage2 ? 'running' : msg.stage2 ? 'done' : 'pending'}`}>Stage 2</span>
+                      <span className={`stage-pill ${msg.loading?.stage3 ? 'running' : msg.stage3 ? 'done' : 'pending'}`}>Stage 3</span>
+                    </div>
+
+                    {msg.error && (
+                      <div className="stream-error">
+                        <strong>Error:</strong> {msg.error}
+                      </div>
+                    )}
+
 
                     {/* Stage 1 */}
                     {msg.loading?.stage1 && (

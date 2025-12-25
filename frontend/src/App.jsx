@@ -7,8 +7,37 @@ import './App.css';
 function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
-  const [currentConversation, setCurrentConversation] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Cache conversations so SSE updates can land even if user navigates away
+  const [conversationCache, setConversationCache] = useState({});
+  // Loading is per conversation (prevents 'all threads spinning')
+  const [loadingById, setLoadingById] = useState({});
+
+  const currentConversation = currentConversationId ? conversationCache[currentConversationId] : null;
+  const isLoading = !!(currentConversationId && loadingById[currentConversationId]);
+
+const hasAssistantProgress = (conv) => {
+  const msgs = conv?.messages || [];
+  return msgs.some((m) => m?.role === 'assistant' && (
+    m?.error ||
+    m?.loading?.stage1 || m?.loading?.stage2 || m?.loading?.stage3 ||
+    m?.stage1 || m?.stage2 || m?.stage3
+  ));
+};
+
+const hasAssistantRunning = (conv) => {
+  const msgs = conv?.messages || [];
+  return msgs.some((m) => m?.role === 'assistant' && (
+    m?.loading?.stage1 || m?.loading?.stage2 || m?.loading?.stage3
+  ));
+};
+
+const serverLooksComplete = (conv) => {
+  const msgs = conv?.messages || [];
+  return msgs.some((m) => m?.role === 'assistant' && (
+    m?.stage3 || m?.error || (typeof m?.content === 'string' && m.content.trim().length > 0)
+  ));
+};
 
   // Load conversations on mount
   useEffect(() => {
@@ -20,7 +49,7 @@ function App() {
     if (currentConversationId) {
       loadConversation(currentConversationId);
     } else {
-      setCurrentConversation(null);
+      // derived from cache (no-op)
     }
   }, [currentConversationId]);
 
@@ -37,7 +66,20 @@ function App() {
   const loadConversation = async (id) => {
     try {
       const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
+
+      // IMPORTANT:
+      // Do not overwrite a richer in-memory conversation (e.g., in-flight SSE placeholder + stage progress)
+      // with a poorer server snapshot (which may not include in-progress data yet).
+      setConversationCache((prev) => {
+        const existing = prev?.[id];
+        const existingLen = existing?.messages?.length || 0;
+        const serverLen = conv?.messages?.length || 0;
+
+        if (existing && existingLen > serverLen) {
+          return { ...prev, [id]: { ...conv, messages: existing.messages } };
+        }
+        return { ...prev, [id]: conv };
+      });
     } catch (error) {
       console.error('Failed to load conversation:', error);
     }
@@ -69,7 +111,7 @@ function App() {
         });
 
         setCurrentConversationId(newConv.id);
-        setCurrentConversation(newConv);
+        setConversationCache((prev) => ({ ...prev, [newConv.id]: newConv }));
       } catch (error) {
         console.error("Failed to create conversation:", error);
       }
@@ -96,126 +138,170 @@ function App() {
   };
 
   const handleSendMessage = async (content) => {
-    if (!currentConversationId) return;
+      if (!currentConversationId) return;
 
-    setIsLoading(true);
-    try {
-      // Optimistically add user message to UI
-      const userMessage = { role: 'user', content };
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), userMessage],
-      }));
+      const cid = currentConversationId;
+      setLoadingById((prev) => ({ ...prev, [cid]: true }));
 
-      // Create a partial assistant message that will be updated progressively
-      const assistantMessage = {
-        role: 'assistant',
-        stage1: null,
-        stage2: null,
-        stage3: null,
-        metadata: null,
-        loading: {
-          stage1: false,
-          stage2: false,
-          stage3: false,
-        },
+      const updateLastAssistant = (messages, updater) => {
+        // Find most recent assistant message (the optimistic placeholder)
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i]?.role === 'assistant') {
+            const nextMsg = { ...(messages[i] || {}) };
+            updater(nextMsg);
+            const next = [...messages];
+            next[i] = nextMsg;
+            return next;
+          }
+        }
+        return messages;
       };
 
-      // Add the partial assistant message
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), assistantMessage],
-      }));
+      try {
+        // Optimistic user message
+        setConversationCache((prev) => {
+          const conv = prev?.[cid] || { id: cid, messages: [] };
+          const messages = [...(conv.messages || []), { role: 'user', content }];
+          return { ...prev, [cid]: { ...conv, messages } };
+        });
 
-      await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
-        switch (eventType) {
-          case 'stage1_start':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              if (lastMsg?.loading) lastMsg.loading.stage1 = true;
-              return { ...prev, messages };
-            });
-            break;
+        // Optimistic assistant placeholder (stages will fill in)
+        const assistantMessage = {
+          role: 'assistant',
+          stage1: null,
+          stage2: null,
+          stage3: null,
+          metadata: null,
+          loading: { stage1: true, stage2: false, stage3: false },
+        };
 
-          case 'stage1_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage1 = event.data;
-              if (lastMsg?.loading) lastMsg.loading.stage1 = false;
-              return { ...prev, messages };
-            });
-            break;
+        setConversationCache((prev) => {
+          const conv = prev?.[cid] || { id: cid, messages: [] };
+          const messages = [...(conv.messages || []), assistantMessage];
+          return { ...prev, [cid]: { ...conv, messages } };
+        });
 
-          case 'stage2_start':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              if (lastMsg?.loading) lastMsg.loading.stage2 = true;
-              return { ...prev, messages };
-            });
-            break;
+        await api.sendMessageStream(cid, content, (eventType, event) => {
+          switch (eventType) {
+            case 'stage1_start':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.loading = { ...(msg.loading || {}), stage1: true };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'stage2_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage2 = event.data;
-              lastMsg.metadata = event.metadata;
-              if (lastMsg?.loading) lastMsg.loading.stage2 = false;
-              return { ...prev, messages };
-            });
-            break;
+            case 'stage1_complete':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.stage1 = event.data;
+                  msg.loading = { ...(msg.loading || {}), stage1: false };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'stage3_start':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              if (lastMsg?.loading) lastMsg.loading.stage3 = true;
-              return { ...prev, messages };
-            });
-            break;
+            case 'stage2_start':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.loading = { ...(msg.loading || {}), stage2: true };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'stage3_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...(prev?.messages || [])];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage3 = event.data;
-              if (lastMsg?.loading) lastMsg.loading.stage3 = false;
-              return { ...prev, messages };
-            });
-            break;
+            case 'stage2_complete':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.stage2 = event.data;
+                  msg.metadata = event.metadata;
+                  msg.loading = { ...(msg.loading || {}), stage2: false };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'title_complete':
-            loadConversations();
-            break;
+            case 'stage3_start':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.loading = { ...(msg.loading || {}), stage3: true };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'complete':
-            loadConversations();
-            setIsLoading(false);
-            break;
+            case 'stage3_complete':
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.stage3 = event.data;
+                  msg.loading = { ...(msg.loading || {}), stage3: false };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+              break;
 
-          case 'error':
-            console.error('Stream error:', event.message);
-            setIsLoading(false);
-            break;
+            case 'title_complete':
+              loadConversations();
+              break;
 
-          default:
-            // ignore
-            break;
-        }
-      });
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: (prev?.messages || []).slice(0, -2),
-      }));
-      setIsLoading(false);
-    }
-  };
+            case 'complete':
+              loadConversations();
+              setLoadingById((prev) => ({ ...prev, [cid]: false }));
+              break;
+
+            case 'error': {
+              const message =
+                event?.message ||
+                event?.error ||
+                (event?.data && (event.data.message || event.data.error)) ||
+                'Stream error';
+
+              setConversationCache((prev) => {
+                const conv = prev?.[cid];
+                if (!conv) return prev;
+                const messages = updateLastAssistant([...(conv.messages || [])], (msg) => {
+                  msg.error = message;
+                  msg.loading = { ...(msg.loading || {}), stage1: false, stage2: false, stage3: false };
+                });
+                return { ...prev, [cid]: { ...conv, messages } };
+              });
+
+              setLoadingById((prev) => ({ ...prev, [cid]: false }));
+              break;
+            }
+
+            default:
+              break;
+          }
+        });
+      } catch (error) {
+        console.error('Failed to send message:', error);
+
+        // Remove optimistic user + assistant messages (scoped to cid)
+        setConversationCache((prev) => {
+          const conv = prev?.[cid];
+          if (!conv) return prev;
+          const messages = (conv.messages || []).slice(0, -2);
+          return { ...prev, [cid]: { ...conv, messages } };
+        });
+
+        setLoadingById((prev) => ({ ...prev, [cid]: false }));
+      }
+    };
+
 
   return (
     <div className="app">

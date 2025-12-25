@@ -22,4 +22,8 @@
   color: #333;
   line-height: 1.7;
   font-size: 15px;
+
+  max-height: clamp(320px, 60vh, 760px);
+  overflow: auto;
+  padding-right: 8px;
 }

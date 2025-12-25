@@ -65,13 +65,16 @@ export const api = {
     if (!response.ok) throw new Error('Failed to send message');
 
     const contentType = response.headers.get('content-type') || '';
+      console.log('council content-type=', contentType);
 
     // JSON fallback
     if (contentType.includes('application/json')) {
       const data = await response.json();
 
-      const _yield = () => new Promise((r) => setTimeout(r, 50));
+      const _yield = () => new Promise((r) => setTimeout(r, 120));
       onEvent('stage1_start', { type: 'stage1_start' });
+
+      await _yield();
       onEvent('stage1_complete', { type: 'stage1_complete', data: data.stage1 });
 
       await _yield();
@@ -82,7 +85,7 @@ export const api = {
       onEvent('stage2_complete', {
         type: 'stage2_complete',
         data: data.stage2,
-        metadata: data.metadata || data.meta || null,
+        metadata: data.meta || data.metadata || null,
       });
 
       await _yield();
