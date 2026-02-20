@@ -1,0 +1,33 @@
+{
+  "version": "1.0.0",
+  "patterns": {
+    "architect:assessment+council+decision+evaluate+framework+project+strategic+through": {
+      "keywords": [
+        "evaluate",
+        "council",
+        "project",
+        "through",
+        "decision",
+        "framework",
+        "strategic",
+        "assessment"
+      ],
+      "agent": "architect",
+      "confidence": 0.55,
+      "successCount": 1,
+      "failureCount": 0,
+      "lastUsed": 1771375681941,
+      "createdAt": 1771375681941
+    }
+  },
+  "stats": {
+    "trajectoriesProcessed": 1,
+    "successfulRoutings": 1,
+    "failedRoutings": 0,
+    "lastUpdate": 1771375681941
+  },
+  "metadata": {
+    "createdAt": "2026-02-18T00:48:01.942Z",
+    "savedAt": "2026-02-18T00:48:01.942Z"
+  }
+}

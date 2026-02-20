@@ -1,0 +1,64 @@
+{
+  "totalDecisions": 35,
+  "modelDistribution": {
+    "haiku": 0,
+    "sonnet": 15,
+    "opus": 20,
+    "inherit": 0
+  },
+  "avgComplexity": 0.3865793281633339,
+  "avgConfidence": 0.6078748602680437,
+  "circuitBreakerTrips": 1,
+  "lastUpdated": "2026-02-18T02:17:07.974Z",
+  "learningHistory": [
+    {
+      "task": "Fix 2 trivial defects in llm-council-mcp server.py and council.py",
+      "model": "haiku",
+      "complexity": 0.3962964684758007,
+      "outcome": "success",
+      "timestamp": "2026-02-18T00:45:35.397Z"
+    },
+    {
+      "task": "Evaluate LLM Council project through rUv's decision framework",
+      "model": "opus",
+      "complexity": 0.38795442120742013,
+      "outcome": "success",
+      "timestamp": "2026-02-18T00:48:02.903Z"
+    },
+    {
+      "task": "Check PyPI for llm-council-mcp package existence",
+      "model": "haiku",
+      "complexity": 0.38795442120742013,
+      "outcome": "success",
+      "timestamp": "2026-02-18T01:00:12.846Z"
+    },
+    {
+      "task": "Compare PyPI llm-council packages to Karpathy original",
+      "model": "haiku",
+      "complexity": 0.38795442120742013,
+      "outcome": "success",
+      "timestamp": "2026-02-18T01:05:37.629Z"
+    },
+    {
+      "task": "Rename package from llm-council-mcp to llm-deliberate-mcp",
+      "model": "sonnet",
+      "complexity": 0.38627421917388405,
+      "outcome": "success",
+      "timestamp": "2026-02-18T01:13:11.702Z"
+    },
+    {
+      "task": "Commit tag push for PyPI publish via GitHub Actions",
+      "model": "haiku",
+      "complexity": 0.38627421917388405,
+      "outcome": "failure",
+      "timestamp": "2026-02-18T01:29:05.183Z"
+    },
+    {
+      "task": "Fix publish workflow environment and retrigger PyPI publish",
+      "model": "haiku",
+      "complexity": 0.38627421917388405,
+      "outcome": "success",
+      "timestamp": "2026-02-18T02:04:51.940Z"
+    }
+  ]
+}

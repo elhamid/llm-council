@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "claude-flow": {
+      "command": "/opt/homebrew/bin/claude-flow",
+      "args": [
+        "mcp",
+        "start"
+      ],
+      "env": {}
+    }
+  }
+}
